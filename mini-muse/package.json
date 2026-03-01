@@ -1,0 +1,41 @@
+{
+  "name": "mini-muse",
+  "version": "2.0.0",
+  "description": "AI-powered Web application generator - Egg.js + React fullstack",
+  "private": true,
+  "scripts": {
+    "dev": "egg-bin dev --ts",
+    "build": "tsc",
+    "start": "egg-scripts start --ts",
+    "test": "egg-bin test --ts"
+  },
+  "egg": {
+    "typescript": true
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "react",
+    "generator",
+    "claude",
+    "egg"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "archiver": "^7.0.0",
+    "dotenv": "^17.3.1",
+    "egg": "^3.29.0",
+    "egg-scripts": "^3.1.0",
+    "prettier": "^3.2.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/archiver": "^6.0.0",
+    "@types/node": "^20.11.0",
+    "egg-bin": "^6.12.0",
+    "egg-ts-helper": "^2.1.0",
+    "typescript": "^5.3.0"
+  }
+}
