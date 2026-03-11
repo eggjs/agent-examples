@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 
 @HTTPController({ path: '/' })
-export class HomeController {
+export class SpaFallbackController {
   @HTTPMethod({ method: HTTPMethodEnum.GET, path: '/*' })
   async index(@HTTPContext() ctx: any) {
     const indexPath = path.join(process.cwd(), 'app/public/index.html');

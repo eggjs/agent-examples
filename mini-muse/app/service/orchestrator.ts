@@ -20,14 +20,14 @@ export interface AgentLoopParams {
 @SingletonProto({ accessLevel: AccessLevel.PUBLIC })
 export class OrchestratorService {
   @Inject()
-  private readonly aiClient!: AiClientService;
+  private readonly aiClientService!: AiClientService;
 
   @Inject()
-  private readonly tools!: ToolsService;
+  private readonly toolsService!: ToolsService;
 
   async *agentLoop(params: AgentLoopParams): AsyncGenerator<AgentStreamMessage> {
     const { description, outputDir, maxIterations, isModification, signal } = params;
-    const toolDefinitions = this.tools.getDefinitions();
+    const toolDefinitions = this.toolsService.getDefinitions();
 
     let systemPrompt: string;
     let messages: Message[];
@@ -55,7 +55,7 @@ export class OrchestratorService {
 
         yield { message: { content: `[status] Processing (iteration ${iterations})...` } };
 
-        const response = await this.aiClient.createMessage({
+        const response = await this.aiClientService.createMessage({
           system: systemPrompt,
           messages,
           tools: toolDefinitions,
@@ -113,7 +113,7 @@ export class OrchestratorService {
         events.push(`[tool_call] Executing: ${toolName}`);
 
         try {
-          const result = await this.tools.execute(toolName, input, outputDir);
+          const result = await this.toolsService.execute(toolName, input, outputDir);
 
           if (result.filesCreated && result.filesCreated.length > 0) {
             events.push(`[file_created] Created: ${result.filesCreated.map((f: string) => f.replace(outputDir + '/', '')).join(', ')}`);

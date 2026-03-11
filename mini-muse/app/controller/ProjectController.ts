@@ -16,7 +16,7 @@ import { PreviewService } from '../service/preview';
 @HTTPController({ path: '/api/v1/projects' })
 export class ProjectController {
   @Inject()
-  private readonly preview!: PreviewService;
+  private readonly previewService!: PreviewService;
 
   // GET /api/v1/projects/:threadId/files
   @HTTPMethod({ method: HTTPMethodEnum.GET, path: '/:threadId/files' })
@@ -88,7 +88,7 @@ export class ProjectController {
       return { success: false, error: 'Project not found' };
     }
 
-    const info = await this.preview.start(threadId, outputDir);
+    const info = await this.previewService.start(threadId, outputDir);
     return {
       success: true,
       data: { status: info.status, port: info.port, error: info.error },
@@ -98,7 +98,7 @@ export class ProjectController {
   // GET /api/v1/projects/:threadId/preview
   @HTTPMethod({ method: HTTPMethodEnum.GET, path: '/:threadId/preview' })
   async previewStatus(@HTTPParam({ name: 'threadId' }) threadId: string) {
-    const info = this.preview.getStatus(threadId);
+    const info = this.previewService.getStatus(threadId);
     if (!info) {
       return { success: false, error: 'No preview found for this project' };
     }

@@ -3,16 +3,12 @@ import type { AgentHandler } from '@eggjs/controller-decorator';
 import type { AgentStore, AgentStreamMessage, CreateRunInput } from '@eggjs/tegg-types';
 import { OSSAgentStore, OSSObjectStorageClient } from '@eggjs/agent-runtime';
 import { OSSObject } from 'oss-client';
-import type { EggLogger } from 'egg-logger';
 import { OrchestratorService } from '../service/orchestrator';
 
 @AgentController()
 export class MuseAgentController implements AgentHandler {
   @Inject()
-  private readonly orchestrator!: OrchestratorService;
-
-  @Inject()
-  private readonly logger!: EggLogger;
+  private readonly orchestratorService!: OrchestratorService;
 
   async createStore(): Promise<AgentStore> {
     const endpoint = process.env.OSS_ENDPOINT || `https://${process.env.OSS_REGION || 'oss-cn-hangzhou'}.aliyuncs.com`;
@@ -48,7 +44,7 @@ export class MuseAgentController implements AgentHandler {
 
     const isModification = input.metadata?.type === 'modify';
 
-    yield* this.orchestrator.agentLoop({
+    yield* this.orchestratorService.agentLoop({
       description,
       appName,
       outputDir,

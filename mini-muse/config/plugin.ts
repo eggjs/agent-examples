@@ -1,6 +1,4 @@
-import { EggPlugin } from 'egg';
-
-const plugin: EggPlugin = {
+export default {
   teggConfig: {
     enable: true,
     package: '@eggjs/tegg-config',
@@ -14,5 +12,3 @@ const plugin: EggPlugin = {
     package: '@eggjs/controller-plugin',
   },
 };
-
-export default plugin;

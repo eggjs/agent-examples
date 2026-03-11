@@ -3,11 +3,12 @@
   "version": "2.0.0",
   "description": "AI-powered Web application generator - Egg.js + React fullstack",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "egg-bin dev --ts",
+    "dev": "egg-bin dev --typescript",
     "build": "tsc",
-    "start": "egg-scripts start --ts",
-    "test": "egg-bin test --ts"
+    "start": "egg-bin start --typescript",
+    "test": "egg-bin test --typescript"
   },
   "egg": {
     "typescript": true
@@ -37,8 +38,11 @@
     "zod": "^3.22.0"
   },
   "devDependencies": {
+    "@eggjs/bin": "^7.3.1",
     "@types/archiver": "^6.0.0",
     "@types/node": "^22.18.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.0"
   },
   "overrides": {
