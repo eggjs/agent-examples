@@ -87,14 +87,32 @@ export class AiClientService {
     const model = params.model ?? (process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514');
     const maxTokens = params.maxTokens ?? 8192;
 
-    const response = await client.messages.create({
+    const requestBody: Anthropic.MessageCreateParamsNonStreaming = {
       model,
       max_tokens: maxTokens,
-      system: params.system,
       messages: params.messages as Anthropic.MessageParam[],
-      tools: params.tools as Anthropic.Tool[],
-    });
+    };
+    if (params.system) {
+      requestBody.system = params.system;
+    }
+    if (params.tools && params.tools.length > 0) {
+      requestBody.tools = params.tools as Anthropic.Tool[];
+    }
 
-    return response as unknown as MessageResponse;
+    const response = await client.messages.create(requestBody);
+
+    if (!response.content || !Array.isArray(response.content)) {
+      throw new Error(`Unexpected API response: content is ${typeof response.content}, full response: ${JSON.stringify(response).slice(0, 1000)}`);
+    }
+
+    // Filter out 'thinking' blocks that some models return
+    const filtered = (response.content as Array<{ type: string }>).filter(
+      block => block.type === 'text' || block.type === 'tool_use',
+    );
+
+    return {
+      ...response,
+      content: filtered,
+    } as unknown as MessageResponse;
   }
 }
