@@ -1,7 +1,18 @@
 import { EggPlugin } from 'egg';
 
 const plugin: EggPlugin = {
-  // egg-static is already enabled by default in egg v3
+  teggConfig: {
+    enable: true,
+    package: '@eggjs/tegg-config',
+  },
+  tegg: {
+    enable: true,
+    package: '@eggjs/tegg-plugin',
+  },
+  teggController: {
+    enable: true,
+    package: '@eggjs/controller-plugin',
+  },
 };
 
 export default plugin;

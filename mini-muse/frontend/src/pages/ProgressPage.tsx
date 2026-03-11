@@ -1,66 +1,73 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { subscribeToProgress } from '../services/api';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { startRun } from '../services/api';
 import ProgressLog from '../components/ProgressLog';
 import type { ProgressEvent } from '../types';
 
 export default function ProgressPage() {
-  const { taskId } = useParams<{ taskId: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
+  const { description, appName } = (location.state || {}) as { description?: string; appName?: string };
+
   const [events, setEvents] = useState<ProgressEvent[]>([]);
   const [done, setDone] = useState(false);
   const [failed, setFailed] = useState(false);
-  const unsubRef = useRef<(() => void) | null>(null);
+  const threadIdRef = useRef<string>('');
+  const cancelRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    if (!taskId) return;
+    if (!description) {
+      navigate('/');
+      return;
+    }
 
-    unsubRef.current = subscribeToProgress(
-      taskId,
+    startRun(
+      description,
+      appName || 'my-app',
       (event) => {
-        const e = event as ProgressEvent;
-        setEvents((prev) => [...prev, e]);
-        if (e.type === 'error') setFailed(true);
+        setEvents(prev => [...prev, event]);
+        if (event.type === 'error') setFailed(true);
+      },
+      (threadId) => {
+        threadIdRef.current = threadId;
       },
       () => setDone(true)
-    );
+    ).then(cancel => {
+      cancelRef.current = cancel;
+    }).catch(err => {
+      setEvents(prev => [...prev, { type: 'error', message: err.message, timestamp: Date.now() }]);
+      setFailed(true);
+      setDone(true);
+    });
 
     return () => {
-      unsubRef.current?.();
+      cancelRef.current?.();
     };
-  }, [taskId]);
+  }, [description, appName, navigate]);
 
-  const isCompleted = events.some((e) => e.type === 'completed');
+  const isCompleted = events.some(e => e.type === 'completed');
 
   return (
     <div className="max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-gray-800">Generation Progress</h2>
-        <span className="text-sm text-gray-500">Task: {taskId?.slice(0, 8)}...</span>
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
         <div className="flex items-center gap-3 mb-4">
-          {!done && !failed && (
-            <div className="w-4 h-4 rounded-full bg-indigo-500 animate-pulse" />
-          )}
-          {isCompleted && (
-            <div className="w-4 h-4 rounded-full bg-green-500" />
-          )}
-          {failed && (
-            <div className="w-4 h-4 rounded-full bg-red-500" />
-          )}
+          {!done && !failed && <div className="w-4 h-4 rounded-full bg-indigo-500 animate-pulse" />}
+          {isCompleted && <div className="w-4 h-4 rounded-full bg-green-500" />}
+          {failed && <div className="w-4 h-4 rounded-full bg-red-500" />}
           <span className="font-medium text-gray-700">
             {failed ? 'Generation Failed' : isCompleted ? 'Generation Complete' : 'Generating...'}
           </span>
         </div>
-
         <ProgressLog events={events} />
       </div>
 
-      {isCompleted && (
+      {isCompleted && threadIdRef.current && (
         <button
-          onClick={() => navigate(`/result/${taskId}`)}
+          onClick={() => navigate(`/result/${threadIdRef.current}`)}
           className="w-full py-3 px-6 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition-colors"
         >
           View Results

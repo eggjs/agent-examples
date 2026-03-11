@@ -1,236 +1,124 @@
-import { Service } from 'egg';
+import { SingletonProto, Inject, AccessLevel } from '@eggjs/tegg';
 import * as path from 'path';
 import { SYSTEM_PROMPT, MODIFY_SYSTEM_PROMPT, createUserPrompt, createModifyPrompt } from '../lib/prompts';
-import { Message, ContentBlock, ToolResultContent } from './aiClient';
-import { ToolName } from '../lib/tools/registry';
 import { listFiles } from '../lib/utils';
+import type { AgentStreamMessage } from '@eggjs/tegg-types';
+import type { AiClientService } from './aiClient';
+import type { ToolsService } from './tools';
+import type { Message, ContentBlock, ToolResultContent } from './aiClient';
 
-export default class OrchestratorService extends Service {
-  async run(taskId: string, description: string): Promise<void> {
-    const { ctx } = this;
-    const task = ctx.service.taskManager.getTask(taskId);
+export interface AgentLoopParams {
+  description: string;
+  appName: string;
+  outputDir: string;
+  maxIterations: number;
+  isModification: boolean;
+  threadId: string;
+  signal?: AbortSignal;
+}
 
-    if (!task) {
-      throw new Error(`Task ${taskId} not found`);
+@SingletonProto({ accessLevel: AccessLevel.PUBLIC })
+export class OrchestratorService {
+  @Inject()
+  private readonly aiClient!: AiClientService;
+
+  @Inject()
+  private readonly tools!: ToolsService;
+
+  async *agentLoop(params: AgentLoopParams): AsyncGenerator<AgentStreamMessage> {
+    const { description, outputDir, maxIterations, isModification, signal } = params;
+    const toolDefinitions = this.tools.getDefinitions();
+
+    let systemPrompt: string;
+    let messages: Message[];
+
+    if (isModification) {
+      systemPrompt = MODIFY_SYSTEM_PROMPT;
+      let relativeFiles: string[] = [];
+      try {
+        const fileList = await listFiles(outputDir);
+        relativeFiles = fileList.map(f => path.relative(outputDir, f));
+      } catch { /* directory might not exist */ }
+      messages = [{ role: 'user', content: createModifyPrompt(description, relativeFiles) }];
+    } else {
+      systemPrompt = SYSTEM_PROMPT;
+      messages = [{ role: 'user', content: createUserPrompt(description) }];
     }
 
-    const messages: Message[] = [{
-      role: 'user',
-      content: createUserPrompt(description),
-    }];
-
-    ctx.service.taskManager.updateProgress(taskId, {
-      type: 'status',
-      message: 'Starting generation...',
-      timestamp: Date.now(),
-    });
-
-    // Save initial chat history entry
-    task.chatHistory.push({
-      role: 'user',
-      content: description,
-      timestamp: Date.now(),
-    });
-
-    await this.agentLoop(taskId, messages, SYSTEM_PROMPT);
-
-    // Save messages to task for future modifications
-    task.messages = messages;
-
-    // Add assistant summary to chat history
-    if (task.status === 'completed') {
-      task.chatHistory.push({
-        role: 'assistant',
-        content: this.extractSummary(messages),
-        timestamp: Date.now(),
-      });
-    }
-  }
-
-  async modify(taskId: string, instruction: string): Promise<void> {
-    const { ctx } = this;
-    const task = ctx.service.taskManager.getTask(taskId);
-
-    if (!task) {
-      throw new Error(`Task ${taskId} not found`);
-    }
-
-    // Read existing file list for context
-    let relativeFiles: string[] = [];
-    try {
-      const fileList = await listFiles(task.outputDir);
-      relativeFiles = fileList.map(f => path.relative(task.outputDir, f));
-    } catch {
-      // Directory might not exist yet
-    }
-
-    // Restore previous messages and append modification instruction
-    const messages: Message[] = [...task.messages as Message[]];
-    messages.push({
-      role: 'user',
-      content: createModifyPrompt(instruction, relativeFiles),
-    });
-
-    ctx.service.taskManager.updateProgress(taskId, {
-      type: 'modify_started',
-      message: 'Starting modification...',
-      timestamp: Date.now(),
-    });
-
-    await this.agentLoop(taskId, messages, MODIFY_SYSTEM_PROMPT);
-
-    // Save updated messages back to task
-    task.messages = messages;
-
-    // Add assistant summary to chat history
-    if (task.status === 'completed') {
-      const summary = this.extractSummary(messages);
-      task.chatHistory.push({
-        role: 'assistant',
-        content: summary,
-        timestamp: Date.now(),
-      });
-
-      ctx.service.taskManager.updateProgress(taskId, {
-        type: 'modify_completed',
-        message: summary,
-        timestamp: Date.now(),
-      });
-    }
-  }
-
-  private async agentLoop(taskId: string, messages: Message[], systemPrompt: string): Promise<void> {
-    const { ctx } = this;
-    const { miniMuse } = this.config;
-    const toolDefinitions = ctx.service.tools.getDefinitions();
-    const task = ctx.service.taskManager.getTask(taskId);
-
-    if (!task) {
-      throw new Error(`Task ${taskId} not found`);
-    }
+    yield { message: { content: `[status] Starting ${isModification ? 'modification' : 'generation'}...` } };
 
     let iterations = 0;
-    const maxIterations = miniMuse.maxIterations;
-
     try {
       while (iterations < maxIterations) {
+        if (signal?.aborted) return;
         iterations++;
 
-        ctx.service.taskManager.updateProgress(taskId, {
-          type: 'status',
-          message: `Processing (iteration ${iterations})...`,
-          timestamp: Date.now(),
-        });
+        yield { message: { content: `[status] Processing (iteration ${iterations})...` } };
 
-        const response = await ctx.service.aiClient.createMessage({
+        const response = await this.aiClient.createMessage({
           system: systemPrompt,
           messages,
           tools: toolDefinitions,
         });
 
-        messages.push({
-          role: 'assistant',
-          content: response.content as ContentBlock[],
-        });
+        messages.push({ role: 'assistant', content: response.content as ContentBlock[] });
 
+        // Yield thinking content
         for (const block of response.content) {
           if (block.type === 'text') {
-            ctx.service.taskManager.updateProgress(taskId, {
-              type: 'thinking',
-              message: block.text.slice(0, 500) + (block.text.length > 500 ? '...' : ''),
-              timestamp: Date.now(),
-            });
+            yield { message: { content: `[thinking] ${block.text.slice(0, 500)}${block.text.length > 500 ? '...' : ''}` } };
           }
         }
 
+        // Yield usage info
+        if (response.usage) {
+          yield { usage: { promptTokens: response.usage.input_tokens, completionTokens: response.usage.output_tokens } };
+        }
+
         if (response.stop_reason === 'end_turn') {
-          ctx.service.taskManager.updateProgress(taskId, {
-            type: 'completed',
-            message: 'Generation complete!',
-            timestamp: Date.now(),
-          });
+          yield { message: { content: `[completed] ${isModification ? 'Modification' : 'Generation'} complete!` } };
           break;
         }
 
         if (response.stop_reason === 'tool_use') {
-          const toolResults = await this.processToolCalls(taskId, response.content, task.outputDir);
-          messages.push({
-            role: 'user',
-            content: toolResults,
-          });
+          const toolResults = await this.processToolCalls(response.content, outputDir);
+          for (const event of toolResults.events) {
+            yield { message: { content: event } };
+          }
+          messages.push({ role: 'user', content: toolResults.results });
         }
       }
 
       if (iterations >= maxIterations) {
-        ctx.service.taskManager.updateProgress(taskId, {
-          type: 'error',
-          message: `Exceeded maximum iterations (${maxIterations})`,
-          timestamp: Date.now(),
-        });
+        yield { message: { content: `[error] Exceeded maximum iterations (${maxIterations})` } };
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      ctx.service.taskManager.updateProgress(taskId, {
-        type: 'error',
-        message: errorMessage,
-        timestamp: Date.now(),
-      });
+      yield { message: { content: `[error] ${errorMessage}` } };
     }
-  }
-
-  private extractSummary(messages: Message[]): string {
-    // Find the last assistant text message as summary
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (msg.role === 'assistant' && Array.isArray(msg.content)) {
-        for (const block of msg.content) {
-          if (block.type === 'text' && block.text) {
-            return block.text.slice(0, 500);
-          }
-        }
-      }
-    }
-    return 'Task completed.';
   }
 
   private async processToolCalls(
-    taskId: string,
     content: Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown> }>,
-    outputDir: string
-  ): Promise<ToolResultContent[]> {
-    const { ctx } = this;
+    outputDir: string,
+  ): Promise<{ results: ToolResultContent[]; events: string[] }> {
     const results: ToolResultContent[] = [];
+    const events: string[] = [];
 
     for (const block of content) {
       if (block.type === 'tool_use' && block.id && block.name) {
-        const toolName = block.name as ToolName;
+        const toolName = block.name;
         const input = block.input || {};
 
-        ctx.service.taskManager.updateProgress(taskId, {
-          type: 'tool_call',
-          message: `Executing: ${toolName}`,
-          data: { tool: toolName, input: JSON.stringify(input).slice(0, 200) },
-          timestamp: Date.now(),
-        });
+        events.push(`[tool_call] Executing: ${toolName}`);
 
         try {
-          const result = await ctx.service.tools.execute(toolName, input, outputDir);
+          const result = await this.tools.execute(toolName, input, outputDir);
 
           if (result.filesCreated && result.filesCreated.length > 0) {
-            ctx.service.taskManager.updateProgress(taskId, {
-              type: 'file_created',
-              message: `Created: ${result.filesCreated.map(f => f.replace(outputDir + '/', '')).join(', ')}`,
-              data: result.filesCreated,
-              timestamp: Date.now(),
-            });
+            events.push(`[file_created] Created: ${result.filesCreated.map((f: string) => f.replace(outputDir + '/', '')).join(', ')}`);
           }
-
-          ctx.service.taskManager.updateProgress(taskId, {
-            type: 'tool_result',
-            message: result.message || `${toolName} completed`,
-            data: { tool: toolName, success: result.success },
-            timestamp: Date.now(),
-          });
+          events.push(`[tool_result] ${result.message || `${toolName} completed`}`);
 
           results.push({
             type: 'tool_result',
@@ -239,14 +127,7 @@ export default class OrchestratorService extends Service {
           });
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-
-          ctx.service.taskManager.updateProgress(taskId, {
-            type: 'tool_result',
-            message: `Error in ${toolName}: ${errorMessage}`,
-            data: { tool: toolName, success: false },
-            timestamp: Date.now(),
-          });
-
+          events.push(`[tool_result] Error in ${toolName}: ${errorMessage}`);
           results.push({
             type: 'tool_result',
             tool_use_id: block.id,
@@ -257,6 +138,6 @@ export default class OrchestratorService extends Service {
       }
     }
 
-    return results;
+    return { results, events };
   }
 }

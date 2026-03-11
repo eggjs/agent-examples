@@ -8,7 +8,7 @@ import ChatPanel from '../components/ChatPanel';
 type Tab = 'code' | 'preview';
 
 export default function ResultPage() {
-  const { taskId } = useParams<{ taskId: string }>();
+  const { threadId } = useParams<{ threadId: string }>();
   const navigate = useNavigate();
   const [files, setFiles] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState('');
@@ -21,28 +21,28 @@ export default function ResultPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (!taskId) return;
-    getFiles(taskId).then((f) => {
+    if (!threadId) return;
+    getFiles(threadId).then((f) => {
       setFiles(f);
       setLoading(false);
     }).catch(() => setLoading(false));
-  }, [taskId]);
+  }, [threadId]);
 
   useEffect(() => {
-    if (!taskId || !selectedFile) {
+    if (!threadId || !selectedFile) {
       setContent('');
       return;
     }
-    getFileContent(taskId, selectedFile).then(setContent).catch(() => setContent('// Failed to load file'));
-  }, [taskId, selectedFile]);
+    getFileContent(threadId, selectedFile).then(setContent).catch(() => setContent('// Failed to load file'));
+  }, [threadId, selectedFile]);
 
   // Poll preview status when installing/starting
   useEffect(() => {
     if (preview.status === 'installing' || preview.status === 'starting') {
       pollRef.current = setInterval(async () => {
-        if (!taskId) return;
+        if (!threadId) return;
         try {
-          const status = await getPreviewStatus(taskId);
+          const status = await getPreviewStatus(threadId);
           setPreview(status);
           if (status.status === 'running' || status.status === 'failed') {
             setPreviewStarting(false);
@@ -54,19 +54,19 @@ export default function ResultPage() {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [preview.status, taskId]);
+  }, [preview.status, threadId]);
 
   const handleStartPreview = useCallback(async () => {
-    if (!taskId) return;
+    if (!threadId) return;
     setPreviewStarting(true);
     try {
-      const status = await startPreview(taskId);
+      const status = await startPreview(threadId);
       setPreview(status);
       setTab('preview');
     } catch {
       setPreviewStarting(false);
     }
-  }, [taskId]);
+  }, [threadId]);
 
   const handleFilesUpdated = useCallback((newFiles: string[]) => {
     setFiles(newFiles);
@@ -111,7 +111,7 @@ export default function ResultPage() {
               New Project
             </button>
             <a
-              href={getDownloadUrl(taskId!)}
+              href={getDownloadUrl(threadId!)}
               className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors inline-flex items-center gap-2"
             >
               Download ZIP
@@ -227,10 +227,10 @@ export default function ResultPage() {
       </div>
 
       {/* Chat panel */}
-      {chatOpen && taskId && (
+      {chatOpen && threadId && (
         <div className="w-[380px] flex-shrink-0">
           <ChatPanel
-            taskId={taskId}
+            threadId={threadId}
             onFilesUpdated={handleFilesUpdated}
             onFileContentUpdated={handleFileContentUpdated}
             selectedFile={selectedFile}

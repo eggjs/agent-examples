@@ -24,18 +24,24 @@
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
+    "@eggjs/agent-runtime": "4.0.2-beta.3",
+    "@eggjs/controller-plugin": "4.0.2-beta.3",
+    "@eggjs/tegg": "4.0.2-beta.3",
+    "@eggjs/tegg-config": "4.0.2-beta.3",
+    "@eggjs/tegg-plugin": "4.0.2-beta.3",
     "archiver": "^7.0.0",
     "dotenv": "^17.3.1",
-    "egg": "^3.29.0",
-    "egg-scripts": "^3.1.0",
+    "egg": "4.1.2-beta.3",
+    "oss-client": "^2.5.1",
     "prettier": "^3.2.0",
     "zod": "^3.22.0"
   },
   "devDependencies": {
     "@types/archiver": "^6.0.0",
-    "@types/node": "^20.11.0",
-    "egg-bin": "^6.12.0",
-    "egg-ts-helper": "^2.1.0",
-    "typescript": "^5.3.0"
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.0"
+  },
+  "overrides": {
+    "@eggjs/agent-runtime": "4.0.2-beta.3"
   }
 }

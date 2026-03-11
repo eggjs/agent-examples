@@ -15,8 +15,8 @@ export default function App() {
       <main className="max-w-5xl mx-auto px-6 py-8">
         <Routes>
           <Route path="/" element={<HomePage />} />
-          <Route path="/progress/:taskId" element={<ProgressPage />} />
-          <Route path="/result/:taskId" element={<ResultPage />} />
+          <Route path="/progress" element={<ProgressPage />} />
+          <Route path="/result/:threadId" element={<ResultPage />} />
         </Routes>
       </main>
     </div>

@@ -1,8 +1,9 @@
-import { Service } from 'egg';
+import { SingletonProto, AccessLevel } from '@eggjs/tegg';
 import { getToolDefinitions, executeTool, ToolName, ToolResult } from '../lib/tools/registry';
 import { ToolDefinition } from './aiClient';
 
-export default class ToolsService extends Service {
+@SingletonProto({ accessLevel: AccessLevel.PUBLIC })
+export class ToolsService {
   getDefinitions(): ToolDefinition[] {
     return getToolDefinitions();
   }

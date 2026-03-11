@@ -1,28 +1,18 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createTask } from '../services/api';
 
 export default function HomePage() {
   const navigate = useNavigate();
   const [description, setDescription] = useState('');
   const [appName, setAppName] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!description.trim()) return;
-
     setLoading(true);
-    setError('');
-
-    try {
-      const result = await createTask(description.trim(), appName.trim() || 'my-app');
-      navigate(`/progress/${result.taskId}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create task');
-      setLoading(false);
-    }
+    // 直接导航到 progress 页面，传递参数
+    navigate('/progress', { state: { description: description.trim(), appName: appName.trim() || 'my-app' } });
   };
 
   return (
@@ -62,12 +52,6 @@ export default function HomePage() {
             className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none"
           />
         </div>
-
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-            {error}
-          </div>
-        )}
 
         <button
           type="submit"

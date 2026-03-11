@@ -1,9 +1,9 @@
-import { Service } from 'egg';
+import { SingletonProto, AccessLevel } from '@eggjs/tegg';
 import { spawn, ChildProcess } from 'child_process';
 import * as net from 'net';
 
 interface PreviewInfo {
-  taskId: string;
+  threadId: string;
   status: 'installing' | 'starting' | 'running' | 'failed';
   port?: number;
   error?: string;
@@ -27,58 +27,48 @@ async function findFreePort(): Promise<number> {
   });
 }
 
-export default class PreviewService extends Service {
-  async start(taskId: string): Promise<PreviewInfo> {
-    // If already running, return existing info
-    const existing = previews.get(taskId);
-    if (existing && (existing.status === 'running' || existing.status === 'installing' || existing.status === 'starting')) {
+@SingletonProto({ accessLevel: AccessLevel.PUBLIC })
+export class PreviewService {
+  async start(threadId: string, outputDir: string): Promise<PreviewInfo> {
+    const existing = previews.get(threadId);
+    if (existing && ['running', 'installing', 'starting'].includes(existing.status)) {
       return existing;
     }
 
-    const task = this.ctx.service.taskManager.getTask(taskId);
-    if (!task) {
-      throw new Error('Task not found');
-    }
-    if (task.status !== 'completed') {
-      throw new Error('Task is not completed yet');
-    }
-
     const info: PreviewInfo = {
-      taskId,
+      threadId,
       status: 'installing',
     };
-    previews.set(taskId, info);
+    previews.set(threadId, info);
 
-    // Run async - don't await
-    this.installAndStart(taskId, task.outputDir, info).catch(err => {
-      this.ctx.logger.error('Preview error for task %s: %s', taskId, err.message);
+    this.installAndStart(threadId, outputDir, info).catch(err => {
+      console.error('Preview error for thread %s: %s', threadId, err.message);
     });
 
     return info;
   }
 
-  getStatus(taskId: string): PreviewInfo | undefined {
-    const info = previews.get(taskId);
+  getStatus(threadId: string): PreviewInfo | undefined {
+    const info = previews.get(threadId);
     if (!info) return undefined;
-    // Don't leak the process object
     return {
-      taskId: info.taskId,
+      threadId: info.threadId,
       status: info.status,
       port: info.port,
       error: info.error,
     };
   }
 
-  stop(taskId: string): void {
-    const info = previews.get(taskId);
+  stop(threadId: string): void {
+    const info = previews.get(threadId);
     if (info?.process) {
       info.process.kill('SIGTERM');
       info.status = 'failed';
-      previews.delete(taskId);
+      previews.delete(threadId);
     }
   }
 
-  private async installAndStart(taskId: string, outputDir: string, info: PreviewInfo): Promise<void> {
+  private async installAndStart(threadId: string, outputDir: string, info: PreviewInfo): Promise<void> {
     // Step 1: npm install
     await new Promise<void>((resolve, reject) => {
       const child = spawn('npm', ['install'], {

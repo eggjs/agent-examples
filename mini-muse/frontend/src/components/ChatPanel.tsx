@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { ChatMessage, ProgressEvent } from '../types';
-import { modifyTask, getChatHistory, subscribeToProgress, getFiles, getFileContent } from '../services/api';
+import { startRun, getChatHistory, getFiles, getFileContent } from '../services/api';
 
 interface ChatPanelProps {
-  taskId: string;
+  threadId: string;
   onFilesUpdated: (files: string[]) => void;
   onFileContentUpdated: (file: string, content: string) => void;
   selectedFile: string;
@@ -20,20 +20,21 @@ const eventTypeStyles: Record<string, string> = {
   error: 'text-red-500',
 };
 
-export default function ChatPanel({ taskId, onFilesUpdated, onFileContentUpdated, selectedFile }: ChatPanelProps) {
+export default function ChatPanel({ threadId, onFilesUpdated, onFileContentUpdated, selectedFile }: ChatPanelProps) {
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isModifying, setIsModifying] = useState(false);
   const [modifyEvents, setModifyEvents] = useState<ProgressEvent[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
-  const modifyStartTimeRef = useRef<number>(0);
+  const cancelRef = useRef<(() => void) | null>(null);
 
   // Load chat history on mount
   useEffect(() => {
-    getChatHistory(taskId).then(setChatHistory).catch(() => {});
-  }, [taskId]);
+    getChatHistory(threadId).then(history => {
+      setChatHistory(history as ChatMessage[]);
+    }).catch(() => {});
+  }, [threadId]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -47,60 +48,59 @@ export default function ChatPanel({ taskId, onFilesUpdated, onFileContentUpdated
     setInput('');
     setIsModifying(true);
     setModifyEvents([]);
-    modifyStartTimeRef.current = Date.now();
 
     // Optimistically add user message
     const userMsg: ChatMessage = { role: 'user', content: instruction, timestamp: Date.now() };
     setChatHistory(prev => [...prev, userMsg]);
 
     try {
-      await modifyTask(taskId, instruction);
-
-      // Subscribe to SSE for modification progress
-      unsubscribeRef.current = subscribeToProgress(
-        taskId,
+      const cancel = await startRun(
+        instruction,
+        'modification',
         (event) => {
-          const ev = event as ProgressEvent;
-          // Filter out events from before the modification started
-          if (ev.timestamp < modifyStartTimeRef.current) return;
-          setModifyEvents(prev => [...prev, ev]);
+          setModifyEvents(prev => [...prev, event]);
 
-          if (ev.type === 'completed' || ev.type === 'modify_completed') {
+          if (event.type === 'completed' || event.type === 'modify_completed') {
             // Refresh chat history, files, and selected file content
-            getChatHistory(taskId).then(history => {
-              setChatHistory(history);
+            getChatHistory(threadId).then(history => {
+              setChatHistory(history as ChatMessage[]);
               setModifyEvents([]);
               setIsModifying(false);
             });
 
-            getFiles(taskId).then(onFilesUpdated);
+            getFiles(threadId).then(onFilesUpdated);
 
             if (selectedFile) {
-              getFileContent(taskId, selectedFile).then(content => {
+              getFileContent(threadId, selectedFile).then(content => {
                 onFileContentUpdated(selectedFile, content);
               }).catch(() => {});
             }
           }
 
-          if (ev.type === 'error') {
+          if (event.type === 'error') {
             setIsModifying(false);
           }
         },
         () => {
-          // SSE connection closed
-        }
+          // onThreadId - not needed for modify, threadId already known
+        },
+        () => {
+          // onDone
+        },
+        threadId
       );
+      cancelRef.current = cancel;
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       setChatHistory(prev => [...prev, { role: 'assistant', content: `Error: ${errMsg}`, timestamp: Date.now() }]);
       setIsModifying(false);
     }
-  }, [input, isModifying, taskId, onFilesUpdated, onFileContentUpdated, selectedFile]);
+  }, [input, isModifying, threadId, onFilesUpdated, onFileContentUpdated, selectedFile]);
 
-  // Cleanup SSE on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      unsubscribeRef.current?.();
+      cancelRef.current?.();
     };
   }, []);
 

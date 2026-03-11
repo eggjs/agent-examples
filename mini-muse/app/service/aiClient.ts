@@ -1,4 +1,4 @@
-import { Service } from 'egg';
+import { SingletonProto, AccessLevel } from '@eggjs/tegg';
 import Anthropic from '@anthropic-ai/sdk';
 
 export type MessageRole = 'user' | 'assistant';
@@ -67,7 +67,8 @@ export interface MessageResponse {
   };
 }
 
-export default class AiClientService extends Service {
+@SingletonProto({ accessLevel: AccessLevel.PUBLIC })
+export class AiClientService {
   private client: Anthropic | null = null;
 
   private getClient(): Anthropic {
@@ -83,11 +84,12 @@ export default class AiClientService extends Service {
 
   async createMessage(params: CreateMessageParams): Promise<MessageResponse> {
     const client = this.getClient();
-    const { miniMuse } = this.config;
+    const model = params.model ?? (process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514');
+    const maxTokens = params.maxTokens ?? 8192;
 
     const response = await client.messages.create({
-      model: params.model ?? miniMuse.model,
-      max_tokens: params.maxTokens ?? miniMuse.maxTokens,
+      model,
+      max_tokens: maxTokens,
       system: params.system,
       messages: params.messages as Anthropic.MessageParam[],
       tools: params.tools as Anthropic.Tool[],
