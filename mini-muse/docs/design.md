@@ -33,8 +33,7 @@ graph TB
         end
 
         subgraph Services["Services (@SingletonProto)"]
-            ORC[OrchestratorService<br/>Agent 主循环<br/>async generator]
-            AI[AiClientService<br/>Claude SDK]
+            ORC[OrchestratorService<br/>Agent 主循环<br/>claude-agent-sdk query]
             TS[ToolsService<br/>工具调用]
             PV[PreviewService<br/>预览服务器管理]
         end
@@ -49,6 +48,7 @@ graph TB
             PR[prompts.ts]
             UT[utils.ts]
             subgraph Tools["tools/"]
+                MCP[mcpTools.ts<br/>MCP Server 适配]
                 AN[analyzer/<br/>需求分析 + 架构规划]
                 GN[generator/<br/>代码生成 x6]
                 VL[validator/<br/>项目验证]
@@ -72,10 +72,8 @@ graph TB
     AR --> STORE
     STORE --> OSS
 
-    ORC --> AI
-    ORC --> TS
-    AI --> Claude
-    TS --> Tools
+    ORC -->|query()| MCP
+    MCP --> Tools
     Tools --> UT
     ORC --> PR
     Tools --> FS
@@ -91,7 +89,7 @@ graph TB
 | 后端框架 | Egg.js 4 + tegg v4 (TypeScript, 装饰器风格) |
 | Agent Runtime | @eggjs/agent-runtime (Thread/Run 模型, SSE) |
 | 持久化存储 | OSSAgentStore (阿里云 OSS) |
-| AI SDK | @anthropic-ai/sdk |
+| AI Agent SDK | @anthropic-ai/claude-agent-sdk |
 | 前端框架 | React 18 + React Router v6 |
 | 构建工具 | Vite 5 |
 | 样式方案 | Tailwind CSS 3 |
@@ -143,48 +141,40 @@ graph TB
 
 #### OrchestratorService (`app/service/orchestrator.ts`)
 
-Agent 主循环，核心方法为 async generator：
+Agent 主循环，使用 `@anthropic-ai/claude-agent-sdk` 的 `query()` 函数驱动 Agent 循环：
 
 - **`agentLoop(params)`**: 返回 `AsyncGenerator<AgentStreamMessage>`
   - 支持初始生成（`SYSTEM_PROMPT`）和迭代修改（`MODIFY_SYSTEM_PROMPT`）两种模式
-  - 通过 yield 返回进度信息，格式为 `[type] message`（如 `[status]`、`[thinking]`、`[tool_call]`、`[file_created]`、`[completed]`、`[error]`）
-  - AgentRuntime 自动将 yield 的消息转为 SSE 事件推送给前端
+  - 通过 `createMuseToolServer(outputDir)` 创建包含 11 个自定义 tool 的 MCP Server
+  - 将 MCP Server 注入 `query()` 的 `mcpServers` 选项，Agent SDK 自动处理 tool calling loop
+  - 消费 `query()` 返回的 async iterator，将 `SDKAssistantMessage` / `SDKResultMessage` 转换为 `[type] message` 格式 yield 给 AgentRuntime
 
 ```mermaid
 sequenceDiagram
     participant C as AgentRuntime
     participant O as OrchestratorService
-    participant AI as Claude API
-    participant T as Tools
+    participant SDK as claude-agent-sdk<br/>query()
+    participant MCP as MCP Server<br/>(mini-muse-tools)
+    participant T as Tool Executors
 
     C->>O: execRun(input, signal) → agentLoop()
     O-->>C: yield [status] Starting...
+    O->>SDK: query({ prompt, options: { mcpServers, systemPrompt, maxTurns } })
 
-    loop agentLoop: iterations < maxIterations
-        O->>AI: createMessage(messages, tools)
-        AI-->>O: response
-        O-->>C: yield [thinking] ...
-        O-->>C: yield { usage }
-
-        alt stop_reason == end_turn
-            O-->>C: yield [completed]
-        else stop_reason == tool_use
-            O->>T: executeTool(name, input)
-            T-->>O: result
-            O-->>C: yield [tool_call] / [file_created] / [tool_result]
-            Note over O: 将结果追加到 messages 继续循环
-        end
+    loop Agent SDK 自动管理 agentic loop
+        SDK->>MCP: tool call (e.g. create_file)
+        MCP->>T: executeTool(name, input, outputDir)
+        T-->>MCP: ToolResult
+        MCP-->>SDK: CallToolResult
+        SDK-->>O: SDKAssistantMessage (tool_use / text)
+        O-->>C: yield [tool_call] / [thinking]
     end
+
+    SDK-->>O: SDKResultMessage
+    O-->>C: yield [completed] + [result]
 
     Note over C: AgentRuntime 将 yield 转为 SSE 事件
 ```
-
-#### AiClientService (`app/service/aiClient.ts`)
-
-- 封装 Anthropic SDK
-- 支持自定义 `baseURL`（`ANTHROPIC_BASE_URL` 环境变量）
-- 支持 Bearer Token 认证（`ANTHROPIC_AUTH_TOKEN` 环境变量）
-- model 和 maxTokens 从环境变量读取（`CLAUDE_MODEL`，默认 `claude-sonnet-4-20250514`）
 
 #### ToolsService (`app/service/tools.ts`)
 
@@ -206,6 +196,7 @@ sequenceDiagram
 | `prompts.ts` | Claude 系统提示词 (SYSTEM_PROMPT + MODIFY_SYSTEM_PROMPT) + 用户提示词模板 |
 | `utils.ts` | 文件操作、Prettier 格式化、命名转换工具 |
 | `tools/registry.ts` | 工具注册表 (11 个工具的定义和执行入口) |
+| `tools/mcpTools.ts` | MCP Server 适配层，将 11 个工具注册为 Agent SDK MCP tool |
 | `tools/analyzer/` | analyzeRequirements + planArchitecture |
 | `tools/generator/` | createConfig / createFile / createComponent / createPage / createHook / createStyle / deleteFile |
 | `tools/reader/` | readFile (读取已生成项目文件，用于增量修改) |
@@ -307,7 +298,7 @@ ResultPage 右侧集成可折叠聊天面板 (ChatPanel)，支持与 AI 对话�
 | Service 层 | @SingletonProto + @Inject | tegg DI，解耦服务间依赖 |
 | 进度编码 | `[type] message` 文本前缀 | 在标准 Agent 协议文本消息内编码自定义进度类型 |
 | 预览实现 | 在 output 目录启动独立 Vite dev server | 直接复用生成项目的 Vite 配置 |
-| Claude API 认证 | 支持 apiKey / authToken 双模式 | 兼容直连 Anthropic 和内部代理 |
+| Agent SDK | @anthropic-ai/claude-agent-sdk + 自定义 MCP Server | SDK 自动管理 agentic loop 和 tool calling，减少手动循环代码 |
 | 迭代修改 | 同一 Thread 上创建新 Run | 共享会话上下文，AI 可读取已生成文件进行增量修改 |
 
 ---
@@ -317,11 +308,8 @@ ResultPage 右侧集成可折叠聊天面板 (ChatPanel)，支持与 AI 对话�
 ### 环境变量 (`.env`)
 
 ```bash
-# Anthropic API
+# Anthropic API (由 claude-agent-sdk 内部使用)
 ANTHROPIC_API_KEY=sk-ant-your-api-key-here
-ANTHROPIC_BASE_URL=                    # 可选：自定义代理
-ANTHROPIC_AUTH_TOKEN=                  # 可选：Bearer Token 认证
-CLAUDE_MODEL=claude-sonnet-4-20250514  # 可选：模型覆盖
 
 # Alibaba Cloud OSS
 OSS_REGION=oss-cn-hangzhou
@@ -371,8 +359,7 @@ mini-muse/
 │   │   ├── ProjectController.ts     # @HTTPController - 文件/预览 API
 │   │   └── HomeController.ts        # @HTTPController - SPA fallback
 │   ├── service/                # tegg @SingletonProto 服务
-│   │   ├── aiClient.ts         # Claude SDK 封装
-│   │   ├── orchestrator.ts     # Agent 主循环 (async generator)
+│   │   ├── orchestrator.ts     # Agent 主循环 (claude-agent-sdk query)
 │   │   ├── tools.ts            # 工具调用入口
 │   │   └── preview.ts          # 预览服务器管理
 │   ├── middleware/
