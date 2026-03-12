@@ -2,49 +2,7 @@ import * as path from 'path';
 import { ToolResult } from '../registry';
 import { writeFile, formatCode, toPascalCase } from '../../utils';
 
-export const createComponentSchema = {
-  type: 'object' as const,
-  properties: {
-    name: {
-      type: 'string',
-      description: 'Component name in PascalCase (e.g., "TodoItem", "Header")',
-    },
-    description: {
-      type: 'string',
-      description: 'Brief description of what the component does',
-    },
-    props: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          name: { type: 'string', description: 'Prop name' },
-          type: { type: 'string', description: 'TypeScript type' },
-          required: { type: 'boolean', description: 'Whether the prop is required' },
-          defaultValue: { type: 'string', description: 'Default value if optional' },
-          description: { type: 'string', description: 'Prop description' },
-        },
-        required: ['name', 'type'],
-      },
-      description: 'Component props',
-    },
-    componentCode: {
-      type: 'string',
-      description: 'The complete React component code (TSX)',
-    },
-    styleCode: {
-      type: 'string',
-      description: 'CSS module styles for the component',
-    },
-    directory: {
-      type: 'string',
-      description: 'Subdirectory within components/ (optional, e.g., "common", "layout")',
-    },
-  },
-  required: ['name', 'componentCode'],
-};
-
-export interface CreateComponentInput {
+interface CreateComponentInput {
   name: string;
   description?: string;
   props?: Array<{

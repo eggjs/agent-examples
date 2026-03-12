@@ -2,42 +2,7 @@ import * as path from 'path';
 import { ToolResult } from '../registry';
 import { writeFile, formatCode, toCamelCase } from '../../utils';
 
-export const createHookSchema = {
-  type: 'object' as const,
-  properties: {
-    name: {
-      type: 'string',
-      description: 'Hook name starting with "use" (e.g., "useTodos", "useLocalStorage")',
-    },
-    description: {
-      type: 'string',
-      description: 'Brief description of what the hook does',
-    },
-    hookCode: {
-      type: 'string',
-      description: 'The complete hook code (TypeScript)',
-    },
-    parameters: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          name: { type: 'string' },
-          type: { type: 'string' },
-          description: { type: 'string' },
-        },
-      },
-      description: 'Hook parameters',
-    },
-    returnType: {
-      type: 'string',
-      description: 'TypeScript return type of the hook',
-    },
-  },
-  required: ['name', 'hookCode'],
-};
-
-export interface CreateHookInput {
+interface CreateHookInput {
   name: string;
   description?: string;
   hookCode: string;

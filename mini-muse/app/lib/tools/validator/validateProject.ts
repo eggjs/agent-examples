@@ -2,22 +2,7 @@ import * as path from 'path';
 import { ToolResult } from '../registry';
 import { fileExists, listFiles, readFile } from '../../utils';
 
-export const validateProjectSchema = {
-  type: 'object' as const,
-  properties: {
-    checks: {
-      type: 'array',
-      items: {
-        type: 'string',
-        enum: ['files', 'imports', 'types', 'structure'],
-      },
-      description: 'Types of validation to perform',
-    },
-  },
-  required: [],
-};
-
-export interface ValidateProjectInput {
+interface ValidateProjectInput {
   checks?: Array<'files' | 'imports' | 'types' | 'structure'>;
 }
 

@@ -75,9 +75,6 @@ export class OrchestratorService {
     // Ensure outputDir exists before Agent SDK spawns process with it as cwd
     fs.mkdirSync(outputDir, { recursive: true });
 
-    // Bind tools to this request's outputDir
-    this.toolsService.setOutputDir(outputDir);
-
     try {
       const messageStream = query({
         prompt,
@@ -88,7 +85,7 @@ export class OrchestratorService {
           maxTurns: maxIterations,
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,
-          mcpServers: this.toolsService.getMcpServers(),
+          mcpServers: this.toolsService.getMcpServers(outputDir),
           allowedTools: this.toolsService.getAllowedTools(),
           stderr: (msg: string) => {
             console.log('[agent-sdk stderr]', msg);

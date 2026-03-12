@@ -2,35 +2,7 @@ import * as path from 'path';
 import { ToolResult } from '../registry';
 import { writeFile, formatCode } from '../../utils';
 
-export const createConfigSchema = {
-  type: 'object' as const,
-  properties: {
-    configType: {
-      type: 'string',
-      enum: ['package.json', 'tsconfig.json', 'vite.config.ts', 'index.html'],
-      description: 'Type of configuration file to create',
-    },
-    appName: {
-      type: 'string',
-      description: 'Application name for package.json',
-    },
-    appTitle: {
-      type: 'string',
-      description: 'Application title for index.html',
-    },
-    dependencies: {
-      type: 'object',
-      description: 'Additional dependencies to include in package.json',
-    },
-    hasRouter: {
-      type: 'boolean',
-      description: 'Whether to include react-router-dom dependency',
-    },
-  },
-  required: ['configType'],
-};
-
-export interface CreateConfigInput {
+interface CreateConfigInput {
   configType: 'package.json' | 'tsconfig.json' | 'vite.config.ts' | 'index.html';
   appName?: string;
   appTitle?: string;

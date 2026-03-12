@@ -2,18 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { ToolResult } from '../registry';
 
-export const readFileSchema = {
-  type: 'object' as const,
-  properties: {
-    filePath: {
-      type: 'string',
-      description: 'Path relative to the project root (e.g., "src/App.tsx", "package.json")',
-    },
-  },
-  required: ['filePath'],
-};
-
-export interface ReadFileInput {
+interface ReadFileInput {
   filePath: string;
 }
 

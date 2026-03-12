@@ -2,34 +2,7 @@ import * as path from 'path';
 import { ToolResult } from '../registry';
 import { writeFile, formatCode, toPascalCase } from '../../utils';
 
-export const createPageSchema = {
-  type: 'object' as const,
-  properties: {
-    name: {
-      type: 'string',
-      description: 'Page name in PascalCase (e.g., "HomePage", "SettingsPage")',
-    },
-    routePath: {
-      type: 'string',
-      description: 'URL path for the page (e.g., "/", "/settings", "/users/:id")',
-    },
-    description: {
-      type: 'string',
-      description: 'Brief description of the page',
-    },
-    pageCode: {
-      type: 'string',
-      description: 'The complete React page component code (TSX)',
-    },
-    styleCode: {
-      type: 'string',
-      description: 'CSS module styles for the page',
-    },
-  },
-  required: ['name', 'routePath', 'pageCode'],
-};
-
-export interface CreatePageInput {
+interface CreatePageInput {
   name: string;
   routePath: string;
   description?: string;

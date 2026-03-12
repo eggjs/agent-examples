@@ -2,27 +2,7 @@ import * as path from 'path';
 import { ToolResult } from '../registry';
 import { writeFile, formatCode } from '../../utils';
 
-export const createFileSchema = {
-  type: 'object' as const,
-  properties: {
-    filePath: {
-      type: 'string',
-      description: 'Path relative to src/ directory (e.g., "types/index.ts", "utils/helpers.ts")',
-    },
-    content: {
-      type: 'string',
-      description: 'The complete file content',
-    },
-    fileType: {
-      type: 'string',
-      enum: ['typescript', 'css', 'json'],
-      description: 'File type for formatting',
-    },
-  },
-  required: ['filePath', 'content'],
-};
-
-export interface CreateFileInput {
+interface CreateFileInput {
   filePath: string;
   content: string;
   fileType?: 'typescript' | 'css' | 'json';
