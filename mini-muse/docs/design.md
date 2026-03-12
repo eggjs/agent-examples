@@ -20,7 +20,7 @@ Mini-Muse 是一个 AI 驱动的 Web 应用生成器。用户通过 Web 界面�
 ```mermaid
 graph TB
     subgraph Frontend["前端 (React SPA)"]
-        HP[HomePage<br/>输入表单]
+        HP[HomePage<br/>输入表单 + 历史会话]
         PP[ProgressPage<br/>SSE 进度展示]
         RP[ResultPage<br/>代码浏览 + 预览]
     end
@@ -211,8 +211,8 @@ sequenceDiagram
 ```
 frontend/src/
 ├── pages/
-│   ├── HomePage.tsx        # 输入表单 (appName + description)
-│   ├── ProgressPage.tsx    # SSE 实时进度展示（POST 流式响应）
+│   ├── HomePage.tsx        # 输入表单 + 历史会话列表 (localStorage)
+│   ├── ProgressPage.tsx    # SSE 实时进度展示 + 会话记录持久化
 │   └── ResultPage.tsx      # Code/Preview 双标签页 + 可折叠聊天面板
 ├── components/
 │   ├── FileTree.tsx        # 递归文件树
@@ -220,7 +220,8 @@ frontend/src/
 │   ├── ProgressLog.tsx     # 进度日志滚动列表
 │   └── ChatPanel.tsx       # 迭代修改聊天面板
 ├── services/
-│   └── api.ts              # API 封装 (fetch + ReadableStream SSE 解析)
+│   ├── api.ts              # API 封装 (fetch + ReadableStream SSE 解析)
+│   └── sessionHistory.ts   # 历史会话管理 (localStorage CRUD)
 └── types/
     └── index.ts            # 共享类型 (RunObject, ThreadObject, ProgressEvent 等)
 ```
@@ -229,8 +230,9 @@ frontend/src/
 
 ```mermaid
 graph LR
-    A[HomePage<br/>输入描述] -->|navigate with state<br/>description + appName| B[ProgressPage<br/>POST /runs/stream SSE]
-    B -->|完成<br/>获得 threadId| C[ResultPage<br/>Code 标签]
+    A[HomePage<br/>输入描述 + 历史列表] -->|navigate with state<br/>description + appName| B[ProgressPage<br/>POST /runs/stream SSE]
+    B -->|完成<br/>获得 threadId<br/>保存 localStorage| C[ResultPage<br/>Code 标签]
+    A -->|点击历史会话| C
     C -->|点击 Preview| D[ResultPage<br/>Preview 标签<br/>iframe 嵌入]
     C -->|Download ZIP| E[下载文件]
     C -->|New Project| A
@@ -300,6 +302,7 @@ ResultPage 右侧集成可折叠聊天面板 (ChatPanel)，支持与 AI 对话�
 | 预览实现 | 在 output 目录启动独立 Vite dev server | 直接复用生成项目的 Vite 配置 |
 | Agent SDK | @anthropic-ai/claude-agent-sdk + 自定义 MCP Server | SDK 自动管理 agentic loop 和 tool calling，减少手动循环代码 |
 | 迭代修改 | 同一 Thread 上创建新 Run | 共享会话上下文，AI 可读取已生成文件进行增量修改 |
+| 历史会话 | localStorage (前端) | 后端无 list threads API，用 localStorage 记录 threadId + 元信息，零后端改动 |
 
 ---
 

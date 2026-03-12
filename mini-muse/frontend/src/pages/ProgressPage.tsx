@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { startRun } from '../services/api';
+import { saveSession, updateSessionStatus } from '../services/sessionHistory';
 import ProgressLog from '../components/ProgressLog';
 import type { ProgressEvent } from '../types';
 
@@ -30,6 +31,13 @@ export default function ProgressPage() {
       },
       (threadId) => {
         threadIdRef.current = threadId;
+        saveSession({
+          threadId,
+          appName: appName || 'my-app',
+          description: description!,
+          createdAt: Date.now(),
+          status: 'in_progress',
+        });
       },
       () => setDone(true)
     ).then(cancel => {
@@ -44,6 +52,15 @@ export default function ProgressPage() {
       cancelRef.current?.();
     };
   }, [description, appName, navigate]);
+
+  useEffect(() => {
+    if (!threadIdRef.current) return;
+    if (events.some(e => e.type === 'completed')) {
+      updateSessionStatus(threadIdRef.current, 'completed');
+    } else if (failed) {
+      updateSessionStatus(threadIdRef.current, 'failed');
+    }
+  }, [events, failed]);
 
   const isCompleted = events.some(e => e.type === 'completed');
 
