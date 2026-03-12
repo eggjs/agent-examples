@@ -34,7 +34,7 @@ graph TB
 
         subgraph Services["Services (@SingletonProto)"]
             ORC[OrchestratorService<br/>Agent 主循环<br/>claude-agent-sdk query]
-            TS[ToolsService<br/>工具调用]
+            TS[ToolsService<br/>MCP Server + 工具定义<br/>getMcpServers / getAllowedTools]
             PV[PreviewService<br/>预览服务器管理]
         end
 
@@ -48,7 +48,7 @@ graph TB
             PR[prompts.ts]
             UT[utils.ts]
             subgraph Tools["tools/"]
-                MCP[mcpTools.ts<br/>MCP Server 适配]
+                REG[registry.ts<br/>工具执行注册表]
                 AN[analyzer/<br/>需求分析 + 架构规划]
                 GN[generator/<br/>代码生成 x6]
                 VL[validator/<br/>项目验证]
@@ -72,8 +72,9 @@ graph TB
     AR --> STORE
     STORE --> OSS
 
-    ORC -->|query()| MCP
-    MCP --> Tools
+    ORC -->|@Inject| TS
+    TS -->|getMcpServers()| REG
+    REG --> Tools
     Tools --> UT
     ORC --> PR
     Tools --> FS
@@ -144,22 +145,26 @@ graph TB
 Agent 主循环，使用 `@anthropic-ai/claude-agent-sdk` 的 `query()` 函数驱动 Agent 循环：
 
 - **`agentLoop(params)`**: 返回 `AsyncGenerator<AgentStreamMessage>`
+  - 使用 `@Inject()` 注入 `ToolsService`，通过 `toolsService.getMcpServers()` 和 `toolsService.getAllowedTools()` 获取工具配置
   - 支持初始生成（`SYSTEM_PROMPT`）和迭代修改（`MODIFY_SYSTEM_PROMPT`）两种模式
-  - 通过 `createMuseToolServer(outputDir)` 创建包含 11 个自定义 tool 的 MCP Server
-  - 将 MCP Server 注入 `query()` 的 `mcpServers` 选项，Agent SDK 自动处理 tool calling loop
+  - 将 MCP Server 和 allowedTools 注入 `query()` 选项，Agent SDK 自动处理 tool calling loop
   - 消费 `query()` 返回的 async iterator，将 `SDKAssistantMessage` / `SDKResultMessage` 转换为 `[type] message` 格式 yield 给 AgentRuntime
+  - 使用 `@LifecyclePostInject()` 一次性初始化 Claude 环境变量（ANTHROPIC_MODEL、离线模式等）
 
 ```mermaid
 sequenceDiagram
     participant C as AgentRuntime
     participant O as OrchestratorService
+    participant TS as ToolsService
     participant SDK as claude-agent-sdk<br/>query()
     participant MCP as MCP Server<br/>(mini-muse-tools)
     participant T as Tool Executors
 
     C->>O: execRun(input, signal) → agentLoop()
     O-->>C: yield [status] Starting...
-    O->>SDK: query({ prompt, options: { mcpServers, systemPrompt, maxTurns } })
+    O->>TS: setOutputDir(outputDir)
+    O->>TS: getMcpServers() / getAllowedTools()
+    O->>SDK: query({ prompt, options: { mcpServers, allowedTools, systemPrompt, maxTurns } })
 
     loop Agent SDK 自动管理 agentic loop
         SDK->>MCP: tool call (e.g. create_file)
@@ -178,7 +183,14 @@ sequenceDiagram
 
 #### ToolsService (`app/service/tools.ts`)
 
-- 委托 `app/lib/tools/registry.ts` 的工具定义和执行
+`@SingletonProto` 服务，集中管理所有 11 个 AI 工具的定义和 MCP Server 注册（参考 wohuguiagent 的 Tools 模式）：
+
+- 每个工具作为类属性，使用 `tool()` from Agent SDK 定义（Zod raw shape 参数 schema）
+- **`setOutputDir(dir)`**: 绑定当前请求的输出目录
+- **`getTools()`**: 返回所有 tool 实例列表
+- **`getMcpServers()`**: 返回 `{ 'mini-muse-tools': createSdkMcpServer(...) }` 供 `query()` 使用
+- **`getAllowedTools()`**: 返回 `mcp__mini-muse-tools__<toolName>` 格式的 allowedTools 列表
+- 工具执行委托给 `app/lib/tools/registry.ts` 的 `executeTool()`
 
 #### PreviewService (`app/service/preview.ts`)
 
@@ -195,8 +207,7 @@ sequenceDiagram
 |------|------|
 | `prompts.ts` | Claude 系统提示词 (SYSTEM_PROMPT + MODIFY_SYSTEM_PROMPT) + 用户提示词模板 |
 | `utils.ts` | 文件操作、Prettier 格式化、命名转换工具 |
-| `tools/registry.ts` | 工具注册表 (11 个工具的定义和执行入口) |
-| `tools/mcpTools.ts` | MCP Server 适配层，将 11 个工具注册为 Agent SDK MCP tool |
+| `tools/registry.ts` | 工具执行注册表 (11 个工具的执行器映射) |
 | `tools/analyzer/` | analyzeRequirements + planArchitecture |
 | `tools/generator/` | createConfig / createFile / createComponent / createPage / createHook / createStyle / deleteFile |
 | `tools/reader/` | readFile (读取已生成项目文件，用于增量修改) |
@@ -300,7 +311,7 @@ ResultPage 右侧集成可折叠聊天面板 (ChatPanel)，支持与 AI 对话�
 | Service 层 | @SingletonProto + @Inject | tegg DI，解耦服务间依赖 |
 | 进度编码 | `[type] message` 文本前缀 | 在标准 Agent 协议文本消息内编码自定义进度类型 |
 | 预览实现 | 在 output 目录启动独立 Vite dev server | 直接复用生成项目的 Vite 配置 |
-| Agent SDK | @anthropic-ai/claude-agent-sdk + 自定义 MCP Server | SDK 自动管理 agentic loop 和 tool calling，减少手动循环代码 |
+| Agent SDK | @anthropic-ai/claude-agent-sdk + ToolsService (DI) | SDK 自动管理 agentic loop，ToolsService 集中管理工具定义和 MCP Server |
 | 迭代修改 | 同一 Thread 上创建新 Run | 共享会话上下文，AI 可读取已生成文件进行增量修改 |
 | 历史会话 | localStorage (前端) | 后端无 list threads API，用 localStorage 记录 threadId + 元信息，零后端改动 |
 
@@ -362,8 +373,8 @@ mini-muse/
 │   │   ├── ProjectController.ts     # @HTTPController - 文件/预览 API
 │   │   └── HomeController.ts        # @HTTPController - SPA fallback
 │   ├── service/                # tegg @SingletonProto 服务
-│   │   ├── orchestrator.ts     # Agent 主循环 (claude-agent-sdk query)
-│   │   ├── tools.ts            # 工具调用入口
+│   │   ├── orchestrator.ts     # Agent 主循环 (claude-agent-sdk query + @Inject ToolsService)
+│   │   ├── tools.ts            # 工具定义 + MCP Server (getMcpServers/getAllowedTools)
 │   │   └── preview.ts          # 预览服务器管理
 │   ├── middleware/
 │   │   └── errorHandler.ts     # API 错误统一处理

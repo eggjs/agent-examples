@@ -1,11 +1,11 @@
-import { SingletonProto, AccessLevel } from '@eggjs/tegg';
+import { SingletonProto, AccessLevel, Inject, LifecyclePostInject } from '@eggjs/tegg';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { SYSTEM_PROMPT, MODIFY_SYSTEM_PROMPT, createUserPrompt, createModifyPrompt } from '../lib/prompts';
 import { listFiles } from '../lib/utils';
-import { createMuseToolServer } from '../lib/tools/mcpTools';
+import { ToolsService } from './tools';
 import type { AgentStreamMessage } from '@eggjs/tegg-types';
 
 export interface AgentLoopParams {
@@ -18,40 +18,41 @@ export interface AgentLoopParams {
   signal?: AbortSignal;
 }
 
-/** Ensure Claude CLI env vars and config are ready for Agent SDK */
-function ensureClaudeEnv() {
-  // Agent SDK (Claude CLI) reads ANTHROPIC_MODEL, not CLAUDE_MODEL
-  if (process.env.CLAUDE_MODEL && !process.env.ANTHROPIC_MODEL) {
-    process.env.ANTHROPIC_MODEL = process.env.CLAUDE_MODEL;
-  }
-  // Disable telemetry / auto-update / marketplace to avoid network calls
-  process.env.CLAUDE_CODE_ENABLE_TELEMETRY = '0';
-  process.env.CLAUDE_CODE_DISABLE_AUTO_UPDATE = '1';
-  process.env.CLAUDE_CODE_DISABLE_MARKETPLACE = '1';
-  process.env.CLAUDE_CODE_OFFLINE_MODE = '1';
-
-  // Ensure ~/.claude.json exists with onboarding completed
-  const claudeConfigPath = path.join(os.homedir(), '.claude.json');
-  try {
-    fs.accessSync(claudeConfigPath);
-  } catch {
-    fs.writeFileSync(claudeConfigPath, JSON.stringify({
-      numStartups: 10,
-      autoUpdaterStatus: 'disabled',
-      hasCompletedOnboarding: true,
-      lastOnboardingVersion: '0.2.45',
-      telemetryEnabled: false,
-      analyticsEnabled: false,
-    }, null, 2));
-  }
-}
-
 @SingletonProto({ accessLevel: AccessLevel.PUBLIC })
 export class OrchestratorService {
+  @Inject()
+  private readonly toolsService!: ToolsService;
+
+  @LifecyclePostInject()
+  protected init() {
+    // Agent SDK (Claude CLI) reads ANTHROPIC_MODEL, not CLAUDE_MODEL
+    if (process.env.CLAUDE_MODEL && !process.env.ANTHROPIC_MODEL) {
+      process.env.ANTHROPIC_MODEL = process.env.CLAUDE_MODEL;
+    }
+    // Disable telemetry / auto-update / marketplace to avoid network calls
+    process.env.CLAUDE_CODE_ENABLE_TELEMETRY = '0';
+    process.env.CLAUDE_CODE_DISABLE_AUTO_UPDATE = '1';
+    process.env.CLAUDE_CODE_DISABLE_MARKETPLACE = '1';
+    process.env.CLAUDE_CODE_OFFLINE_MODE = '1';
+
+    // Ensure ~/.claude.json exists with onboarding completed
+    const claudeConfigPath = path.join(os.homedir(), '.claude.json');
+    try {
+      fs.accessSync(claudeConfigPath);
+    } catch {
+      fs.writeFileSync(claudeConfigPath, JSON.stringify({
+        numStartups: 10,
+        autoUpdaterStatus: 'disabled',
+        hasCompletedOnboarding: true,
+        lastOnboardingVersion: '0.2.45',
+        telemetryEnabled: false,
+        analyticsEnabled: false,
+      }, null, 2));
+    }
+  }
+
   async *agentLoop(params: AgentLoopParams): AsyncGenerator<AgentStreamMessage> {
     const { description, outputDir, maxIterations, isModification, signal } = params;
-
-    ensureClaudeEnv();
 
     let systemPrompt: string;
     let prompt: string;
@@ -74,7 +75,8 @@ export class OrchestratorService {
     // Ensure outputDir exists before Agent SDK spawns process with it as cwd
     fs.mkdirSync(outputDir, { recursive: true });
 
-    const museToolServer = createMuseToolServer(outputDir);
+    // Bind tools to this request's outputDir
+    this.toolsService.setOutputDir(outputDir);
 
     try {
       const messageStream = query({
@@ -86,9 +88,8 @@ export class OrchestratorService {
           maxTurns: maxIterations,
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,
-          mcpServers: {
-            'mini-muse-tools': museToolServer,
-          },
+          mcpServers: this.toolsService.getMcpServers(),
+          allowedTools: this.toolsService.getAllowedTools(),
           stderr: (msg: string) => {
             console.log('[agent-sdk stderr]', msg);
           },
