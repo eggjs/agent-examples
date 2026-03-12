@@ -1,0 +1,7 @@
+{
+  "name": "mini-muse-service",
+  "type": "module",
+  "eggModule": {
+    "name": "miniMuse"
+  }
+}

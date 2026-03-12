@@ -1,0 +1,51 @@
+{
+  "name": "mini-muse",
+  "version": "2.0.0",
+  "description": "AI-powered Web application generator - Egg.js + React fullstack",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "egg-bin dev --typescript",
+    "build": "tsc",
+    "start": "egg-bin start --typescript",
+    "test": "egg-bin test --typescript"
+  },
+  "egg": {
+    "typescript": true
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "react",
+    "generator",
+    "claude",
+    "egg"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.0",
+    "@eggjs/agent-runtime": "4.0.2-beta.3",
+    "@eggjs/controller-plugin": "4.0.2-beta.3",
+    "@eggjs/tegg": "4.0.2-beta.3",
+    "@eggjs/tegg-config": "4.0.2-beta.3",
+    "@eggjs/tegg-plugin": "4.0.2-beta.3",
+    "archiver": "^7.0.0",
+    "dotenv": "^17.3.1",
+    "egg": "4.1.2-beta.3",
+    "oss-client": "^2.5.1",
+    "prettier": "^3.2.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@eggjs/bin": "^7.3.1",
+    "@types/archiver": "^6.0.0",
+    "@types/node": "^22.18.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.0"
+  },
+  "overrides": {
+    "@eggjs/agent-runtime": "4.0.2-beta.3"
+  }
+}
